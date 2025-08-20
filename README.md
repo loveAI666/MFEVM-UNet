@@ -78,4 +78,4 @@ python train.py  # Train and test MFEVM-UNet on the ISIC17 or ISIC18 dataset.
 
 ## 5. Acknowledgments
 
-- We thank the authors of [VMamba](https://github.com/MzeroMiko/VMamba) and [VM-UNet]((https://github.com/JCruan519/VM-UNet)) and [LocalMamba](https://github.com/hunto/LocalMamba) for their open-source codes.
+- We thank the authors of [VMamba](https://github.com/MzeroMiko/VMamba) and [VM-UNet](https://github.com/JCruan519/VM-UNet) and [LocalMamba](https://github.com/hunto/LocalMamba) for their open-source codes.
