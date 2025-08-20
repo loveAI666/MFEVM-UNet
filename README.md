@@ -43,7 +43,7 @@ The .whl files of causal_conv1d and mamba_ssm could be found here. {[Baidu](http
     - masks
       - .png
 
-### Synapse datasets
+### CVC-ClinicDB
 
 - The CVC-ClinicDB datasets, divided into a 7:3 ratio,, you could follow [](https://pan.baidu.com/s/1FFku4zxyFfEZOF5Zx4AMTQ?pwd=rjgd)}.
 
