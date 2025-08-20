@@ -318,7 +318,6 @@ class SelectiveScan(torch.autograd.Function):
         return (du, ddelta, dA, dB, dC, dD, ddelta_bias, None, None)
 
 
-
 class depthwise_separable_conv(nn.Module):
     def __init__(self, ch_in, ch_out):
         super(depthwise_separable_conv, self).__init__()
@@ -390,7 +389,7 @@ class SS2D(nn.Module):
         self,
         d_model,#模型内部处理数据的维度，
         d_state=16,
-        # d_state="auto", # 20241109
+        # d_state="auto", # 20240109
         d_conv=3,#局部卷积的宽度
         expand=2,#块拓展因子，2代表拓展后的维度是原始维度的两倍
         dt_rank="auto",#时间步长，调整方式为自动调节
@@ -427,7 +426,10 @@ class SS2D(nn.Module):
             padding=(d_conv - 1) // 2,
             **factory_kwargs,
         )
-
+        #PConv调用
+        # self.partial_conv3 = PConv(dim = self.d_inner,ouc = self.d_inner,n_div = 4,forward = self.forwardl)
+        #DW-Conv
+        # self.conv2d = depthwise_separable_conv(self.d_inner,self.d_inner)
         self.act = nn.SiLU()
 
         self.x_proj = (
@@ -699,7 +701,7 @@ class VSSBlock(nn.Module):
         x = input + self.drop_path(self.self_attention(self.ln_1(input)))
         return x
 
-class GSC(nn.Module):
+class SFGC(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
         self.proj = nn.Conv2d(in_channels, in_channels, 3, 1, 1)
@@ -718,11 +720,10 @@ class GSC(nn.Module):
         self.norm4 = nn.InstanceNorm2d(in_channels)
         self.nonliner4 = nn.ReLU()
         
-        #new
         self.global_avg_pool = nn.AdaptiveAvgPool2d(1)
 
     def forward(self, x):
-        x_residual = x  # 残差连接
+        x_residual = x  
 
         x1 = self.proj(x)
         x1 = self.norm(x1)
@@ -737,9 +738,8 @@ class GSC(nn.Module):
         x2 = self.nonliner3(x2)
 
         x = x1 + x2
-        x = self.global_avg_pool(x)      #全局平均池化
+        x = self.global_avg_pool(x)     
         x = self.proj4(x)
-        # x = self.norm4(x)
         x = self.nonliner4(x)
 
         return x + x_residual
@@ -781,7 +781,7 @@ class VSSLayer(nn.Module):
                 d_state=d_state,
             )
             for i in range(depth)])
-        self.gsc = GSC(in_channels = dim)
+        self.SFGC = SFGC(in_channels = dim)
         
         if True: # is this really applied? Yes, but been overriden later in VSSM!
             def _init_weights(module: nn.Module):
@@ -806,7 +806,7 @@ class VSSLayer(nn.Module):
             else:
                 x = blk(x)
         x = x.permute(0, 3, 1, 2)
-        x = self.gsc(x)
+        x = self.SFGC(x)
         x = x.permute(0, 2, 3, 1)
         if self.downsample is not None:
             x = self.downsample(x)
@@ -961,16 +961,15 @@ class VSSLayer_up(nn.Module):
                 x = blk(x)
         
         return x
-class SFGC(nn.Module):
+class MSIM_Thefirst(nn.Module):
     def __init__(self, channel_l, channel_g, init_channel=96):
-        super(SFGC, self).__init__()
+        super(MSIM_Thefirst, self).__init__()
         self.W_x1 = nn.Conv2d(channel_l, channel_l, kernel_size=1)
         self.W_x2 = nn.Conv2d(channel_l, channel_g, kernel_size=1, stride=2, padding=0)  # stride=2
         self.avg_pool = nn.AvgPool2d(kernel_size=2 , stride=2)
         self.W_g1 = nn.Conv2d(init_channel, channel_l, kernel_size=3, stride=1, padding=1)  # stride=1
         self.W_g2 = nn.Conv2d(channel_g, channel_g, kernel_size=1)
         self.relu = nn.SiLU()
-
         self.psi1 = nn.Conv2d(channel_l, out_channels=1, kernel_size=1)
         self.psi2 = nn.Conv2d(channel_g, out_channels=1, kernel_size=1)
         self.sig = nn.Sigmoid()
@@ -996,16 +995,15 @@ class SFGC(nn.Module):
         out = xl_after_first_att * att_map_second_upsample
         return out
 
-class MSIM(nn.Module):
+class MSIM_TheSecond(nn.Module):
     def __init__(self, channel_l, channel_g, init_channel=96):
-        super(MSIM, self).__init__()
+        super(MSIM_TheSecond, self).__init__()
         self.W_x1 = nn.Conv2d(channel_l, channel_l, kernel_size=1)
         self.W_x2 = nn.Conv2d(channel_l, channel_g, kernel_size=1, stride=2, padding=0)  # stride=2
         self.avg_pool = nn.AvgPool2d(kernel_size=2 , stride=2)
         self.W_g1 = nn.Conv2d(init_channel, channel_l, kernel_size=3, stride=1, padding=1)  # stride=1
         self.W_g2 = nn.Conv2d(channel_g, channel_g, kernel_size=1)
         self.relu = nn.SiLU()
-        # self.relu = nn.ReLU()
         self.psi1 = nn.Conv2d(channel_l, out_channels=1, kernel_size=1)
         self.psi2 = nn.Conv2d(channel_g, out_channels=1, kernel_size=1)
         self.sig = nn.Sigmoid()
@@ -1076,10 +1074,10 @@ class VSSM(nn.Module):
                 use_checkpoint=use_checkpoint,
             )
             self.layers.append(layer)
-        # def SFGC):
+        # def MSIM_Thefirst):
         #     return SelectiveScan.apply(u, delta, A, B, C, D, dt_projs_bias, delta_softplus, nrows)
-        self.attention = SFGC(channel_l = 192 ,channel_g = 384 ,init_channel = 96)
-        self.attentions = MSIM(channel_l = 384 ,channel_g = 768 ,init_channel = 96)
+        self.attention = MSIM_Thefirst(channel_l = 192 ,channel_g = 384 ,init_channel = 96)
+        self.attentions = MSIM_TheSecond(channel_l = 384 ,channel_g = 768 ,init_channel = 96)
         self.layers_up = nn.ModuleList()
         for i_layer in range(self.num_layers):
             layer = VSSLayer_up(
